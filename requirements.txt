@@ -1,0 +1,16 @@
+torch
+transformers
+accelerate
+bitsandbytes
+peft
+datasets
+pillow
+pandas
+requests
+tqdm
+gradio
+sentencepiece
+protobuf
+scikit-learn
+wandb
+huggingface_hub
