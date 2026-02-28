@@ -16,7 +16,9 @@ class GeoLocator:
         else:
             load_adapters = True
 
-        self.processor = PaliGemmaProcessor.from_pretrained(model_path)
+        # Always load the processor from the base model so it works before
+        # fine-tuning (when model_path may not contain a saved processor).
+        self.processor = PaliGemmaProcessor.from_pretrained(base_model_id)
         
         # Load base model
         self.model = PaliGemmaForConditionalGeneration.from_pretrained(
