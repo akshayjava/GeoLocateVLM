@@ -24,6 +24,12 @@ def _write_image(tmp_path, name="test.jpg", size=(224, 224)):
     return path
 
 
+class _MockBatchEncoding(dict):
+    """A dict subclass that mimics BatchEncoding's .to(device) method."""
+    def to(self, device):
+        return self
+
+
 def _make_locator(tmp_path, input_len=10, extra_tokens=3, decoded="Paris, France"):
     """
     Build a GeoLocator bypassing __init__, with all heavy attributes mocked.
@@ -37,11 +43,11 @@ def _make_locator(tmp_path, input_len=10, extra_tokens=3, decoded="Paris, France
     mock_model = MagicMock()
     mock_model.device = torch.device("cpu")
 
-    # processor(text=..., images=...) returns a dict-like object
-    mock_inputs = {
+    # processor(text=..., images=...) returns a BatchEncoding-like object with .to()
+    mock_inputs = _MockBatchEncoding({
         "input_ids": torch.zeros(1, input_len, dtype=torch.long),
         "attention_mask": torch.ones(1, input_len, dtype=torch.long),
-    }
+    })
     mock_processor.return_value = mock_inputs
 
     # generate() returns full sequence: input + generated tokens
@@ -158,12 +164,10 @@ class TestGeoLocatorInit:
         ctx = [p.start() for p in patches]
         try:
             locator = GeoLocator(model_path="models/nonexistent")
-            # Processor should be loaded from the base model id, not the missing path
-            load_call = mock_proc.__class__.from_pretrained.call_args
         finally:
             for p in patches:
                 p.stop()
-        # No exception should have been raised
+        # No exception should have been raised when model_path doesn't exist
         assert locator is not None
 
     def test_loads_adapters_when_path_exists(self, tmp_path):
