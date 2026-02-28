@@ -1,13 +1,19 @@
 """
 Unit tests for src/evaluate.py.
 
-Covers parse_coordinates, text_to_coords, and calculate_metrics without
-loading any model.
+Covers parse_coordinates, text_to_coords, calculate_metrics, and
+calculate_metrics_by_region without loading any model.
 """
 from unittest.mock import MagicMock, patch
 
 import pytest
-from src.evaluate import parse_coordinates, text_to_coords, calculate_metrics
+from src.evaluate import (
+    parse_coordinates,
+    text_to_coords,
+    calculate_metrics,
+    calculate_metrics_by_region,
+    _assign_region,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +60,22 @@ class TestParseCoordinates:
         # When multiple coordinate pairs appear, the first is returned
         result = parse_coordinates("from 10.0, 20.0 to 30.0, 40.0")
         assert result == (10.0, 20.0)
+
+    def test_invalid_latitude_above_90_returns_none(self):
+        assert parse_coordinates("91.0, 0.0") is None
+
+    def test_invalid_latitude_below_minus_90_returns_none(self):
+        assert parse_coordinates("-91.0, 0.0") is None
+
+    def test_invalid_longitude_above_180_returns_none(self):
+        assert parse_coordinates("0.0, 181.0") is None
+
+    def test_invalid_longitude_below_minus_180_returns_none(self):
+        assert parse_coordinates("0.0, -181.0") is None
+
+    def test_boundary_values_are_valid(self):
+        assert parse_coordinates("90.0, 180.0") == (90.0, 180.0)
+        assert parse_coordinates("-90.0, -180.0") == (-90.0, -180.0)
 
 
 # ---------------------------------------------------------------------------
@@ -201,3 +223,99 @@ class TestTextToCoords:
             result = text_to_coords("Atlantis", use_geocoder=True)
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _assign_region (Phase 4.7)
+# ---------------------------------------------------------------------------
+
+class TestAssignRegion:
+    def test_paris_is_europe(self):
+        assert _assign_region(48.8584, 2.2945) == "Europe"
+
+    def test_new_york_is_north_america(self):
+        assert _assign_region(40.7128, -74.0060) == "North_America" or \
+               _assign_region(40.7128, -74.0060) == "North America"
+
+    def test_sao_paulo_is_south_america(self):
+        assert _assign_region(-23.5505, -46.6333) == "South America"
+
+    def test_nairobi_is_africa(self):
+        assert _assign_region(-1.2921, 36.8219) == "Africa"
+
+    def test_tokyo_is_asia(self):
+        assert _assign_region(35.6762, 139.6503) == "Asia"
+
+    def test_sydney_is_oceania(self):
+        assert _assign_region(-33.8688, 151.2093) == "Oceania"
+
+    def test_middle_of_pacific_is_other(self):
+        # (0, -150) is in the Pacific Ocean — not in any land box
+        result = _assign_region(0.0, -150.0)
+        assert result == "Other"
+
+    def test_returns_string(self):
+        assert isinstance(_assign_region(0.0, 0.0), str)
+
+
+# ---------------------------------------------------------------------------
+# calculate_metrics_by_region (Phase 4.7)
+# ---------------------------------------------------------------------------
+
+class TestCalculateMetricsByRegion:
+    def _make_result(self, true_lat, true_lon, pred_lat=None, pred_lon=None):
+        if pred_lat is None:
+            pred_lat, pred_lon = true_lat, true_lon  # perfect prediction
+        return {
+            "true_lat": true_lat, "true_lon": true_lon,
+            "pred_lat": pred_lat, "pred_lon": pred_lon,
+        }
+
+    def test_empty_results_returns_empty_dict(self):
+        assert calculate_metrics_by_region([]) == {}
+
+    def test_single_region_returns_one_entry(self):
+        results = [self._make_result(48.8584, 2.2945)]  # Paris → Europe
+        by_region = calculate_metrics_by_region(results)
+        assert "Europe" in by_region
+        assert len(by_region) == 1
+
+    def test_two_regions_return_two_entries(self):
+        results = [
+            self._make_result(48.8584, 2.2945),   # Paris → Europe
+            self._make_result(40.7128, -74.0060),  # New York → North America
+        ]
+        by_region = calculate_metrics_by_region(results)
+        assert "Europe" in by_region
+        assert "North America" in by_region
+        assert len(by_region) == 2
+
+    def test_per_region_metrics_have_correct_keys(self):
+        results = [self._make_result(48.8584, 2.2945)]
+        by_region = calculate_metrics_by_region(results)
+        expected_keys = {
+            "acc_@1km", "acc_@25km", "acc_@200km", "acc_@750km", "acc_@2500km",
+            "median_error_km", "mean_error_km", "parse_failure_rate",
+        }
+        for region_metrics in by_region.values():
+            assert expected_keys.issubset(region_metrics.keys())
+
+    def test_perfect_predictions_give_acc_one(self):
+        results = [self._make_result(48.8584, 2.2945)]  # perfect
+        by_region = calculate_metrics_by_region(results)
+        assert by_region["Europe"]["acc_@1km"] == 1.0
+
+    def test_regions_are_sorted_alphabetically(self):
+        results = [
+            self._make_result(48.8584, 2.2945),   # Europe
+            self._make_result(-23.5505, -46.6333), # South America
+            self._make_result(35.6762, 139.6503),  # Asia
+        ]
+        keys = list(calculate_metrics_by_region(results).keys())
+        assert keys == sorted(keys)
+
+    def test_unknown_region_labelled_other(self):
+        # Pacific Ocean — should land in "Other"
+        results = [self._make_result(0.0, -150.0)]
+        by_region = calculate_metrics_by_region(results)
+        assert "Other" in by_region
