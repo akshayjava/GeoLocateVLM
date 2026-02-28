@@ -1,10 +1,13 @@
 """
 Unit tests for src/evaluate.py.
 
-Covers parse_coordinates and calculate_metrics without loading any model.
+Covers parse_coordinates, text_to_coords, and calculate_metrics without
+loading any model.
 """
+from unittest.mock import MagicMock, patch
+
 import pytest
-from src.evaluate import parse_coordinates, calculate_metrics
+from src.evaluate import parse_coordinates, text_to_coords, calculate_metrics
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +123,14 @@ class TestCalculateMetrics:
         assert m["mean_error_km"] != float("inf")
         assert m["median_error_km"] == pytest.approx(0.0, abs=0.01)
 
+    def test_multiple_results_accuracy(self):
+        results = [
+            {"true_lat": 0.0, "true_lon": 0.0, "pred_lat": 0.0, "pred_lon": 0.0},
+            {"true_lat": 0.0, "true_lon": 0.0, "pred_lat": 90.0, "pred_lon": 0.0},
+        ]
+        m = calculate_metrics(results)
+        assert m["acc_@1km"] == 0.5
+
     def test_accuracy_values_in_zero_one_range(self):
         results = [
             {"true_lat": 0.0, "true_lon": 0.0, "pred_lat": 0.0, "pred_lon": 0.0},
@@ -128,3 +139,65 @@ class TestCalculateMetrics:
         m = calculate_metrics(results)
         for key in ["acc_@1km", "acc_@25km", "acc_@200km", "acc_@750km", "acc_@2500km"]:
             assert 0.0 <= m[key] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# text_to_coords (Phase 3.5)
+# ---------------------------------------------------------------------------
+
+class TestTextToCoords:
+    def test_returns_coords_when_decimal_present(self):
+        result = text_to_coords("48.8584, 2.2945", use_geocoder=False)
+        assert result == (48.8584, 2.2945)
+
+    def test_returns_coords_for_integer_pair(self):
+        result = text_to_coords("48, 2", use_geocoder=False)
+        assert result == (48.0, 2.0)
+
+    def test_no_geocoder_returns_none_for_city_name(self):
+        result = text_to_coords("Paris, France", use_geocoder=False)
+        assert result is None
+
+    def test_empty_string_returns_none(self):
+        assert text_to_coords("", use_geocoder=False) is None
+
+    def test_geocoder_called_when_no_direct_coords(self):
+        mock_loc = MagicMock()
+        mock_loc.latitude = 48.8566
+        mock_loc.longitude = 2.3522
+
+        mock_geocoder = MagicMock()
+        mock_geocoder.geocode.return_value = mock_loc
+
+        with patch("src.evaluate._get_geocoder", return_value=mock_geocoder):
+            result = text_to_coords("Paris, France", use_geocoder=True)
+
+        assert result == pytest.approx((48.8566, 2.3522))
+        mock_geocoder.geocode.assert_called_once_with("Paris, France", timeout=5)
+
+    def test_geocoder_not_called_when_coords_found_directly(self):
+        mock_geocoder = MagicMock()
+
+        with patch("src.evaluate._get_geocoder", return_value=mock_geocoder):
+            result = text_to_coords("48.8584, 2.2945", use_geocoder=True)
+
+        mock_geocoder.geocode.assert_not_called()
+        assert result == (48.8584, 2.2945)
+
+    def test_geocoder_failure_returns_none(self):
+        mock_geocoder = MagicMock()
+        mock_geocoder.geocode.side_effect = Exception("network error")
+
+        with patch("src.evaluate._get_geocoder", return_value=mock_geocoder):
+            result = text_to_coords("Somewhere unknown", use_geocoder=True)
+
+        assert result is None
+
+    def test_geocoder_none_result_returns_none(self):
+        mock_geocoder = MagicMock()
+        mock_geocoder.geocode.return_value = None
+
+        with patch("src.evaluate._get_geocoder", return_value=mock_geocoder):
+            result = text_to_coords("Atlantis", use_geocoder=True)
+
+        assert result is None

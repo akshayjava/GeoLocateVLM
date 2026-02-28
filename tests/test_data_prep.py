@@ -12,7 +12,7 @@ import pytest
 import requests
 from PIL import Image
 
-from src.data_prep import download_image, prepare_dataset
+from src.data_prep import download_image, prepare_dataset, PROMPT_STRATEGIES
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +188,48 @@ class TestPrepareDataset:
             prepare_dataset(csv, str(tmp_path))
 
         assert os.path.isdir(str(tmp_path / "processed_dataset"))
+
+    # --- Prompt strategy tests (Phase 3.1) ---
+
+    def test_coordinates_strategy_target_has_decimal_coords(self, tmp_path):
+        rows = [{"image_url": "http://x.com/1.jpg", "latitude": 48.8584, "longitude": 2.2945,
+                 "city": "Paris", "country": "France"}]
+        csv = _make_csv(tmp_path, rows)
+        with patch("src.data_prep.download_image", side_effect=_fake_download):
+            ds = prepare_dataset(csv, str(tmp_path), strategy="coordinates")
+
+        assert ds is not None
+        # Target should be "48.8584, 2.2945" (4 decimal places)
+        assert "48.8584" in ds[0]["target"]
+        assert "2.2945" in ds[0]["target"]
+
+    def test_combined_strategy_target_has_both_city_and_coords(self, tmp_path):
+        rows = [{"image_url": "http://x.com/1.jpg", "latitude": 48.8584, "longitude": 2.2945,
+                 "city": "Paris", "country": "France"}]
+        csv = _make_csv(tmp_path, rows)
+        with patch("src.data_prep.download_image", side_effect=_fake_download):
+            ds = prepare_dataset(csv, str(tmp_path), strategy="combined")
+
+        assert ds is not None
+        target = ds[0]["target"]
+        assert "Paris" in target
+        assert "France" in target
+        assert "48.8584" in target
+
+    def test_invalid_strategy_raises_value_error(self, tmp_path):
+        rows = [{"image_url": "http://x.com/1.jpg", "latitude": 0.0, "longitude": 0.0,
+                 "city": "X", "country": "Y"}]
+        csv = _make_csv(tmp_path, rows)
+        with pytest.raises(ValueError, match="Unknown strategy"):
+            prepare_dataset(csv, str(tmp_path), strategy="nonexistent")
+
+    def test_all_strategy_keys_present(self):
+        assert set(PROMPT_STRATEGIES.keys()) == {"city_country", "coordinates", "combined"}
+
+    def test_each_strategy_has_prompt_and_callable(self):
+        for key, (prompt, fn) in PROMPT_STRATEGIES.items():
+            assert isinstance(prompt, str) and prompt
+            assert callable(fn)
 
     def test_existing_image_not_redownloaded(self, tmp_path):
         rows = [{"image_url": "http://x.com/1.jpg", "latitude": 0.0, "longitude": 0.0,

@@ -49,7 +49,7 @@ import pandas as pd
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from src.evaluate import calculate_metrics, parse_coordinates
+from src.evaluate import calculate_metrics, parse_coordinates, text_to_coords
 
 SUPPORTED_DATASETS = ["im2gps3k", "yfcc4k", "custom"]
 
@@ -105,6 +105,7 @@ def run_benchmark(
     model_path: str = "models/geolocate_vlm",
     dataset: str = "custom",
     output_path: str | None = None,
+    use_geocoder: bool = True,
 ) -> dict:
     """
     Run the full benchmark and return a report dict.
@@ -152,7 +153,8 @@ def run_benchmark(
 
         try:
             pred_text = locator.predict(image_path)
-            pred_coords = parse_coordinates(pred_text)
+            # Use geocoding fallback so city-name outputs still resolve to coords
+            pred_coords = text_to_coords(pred_text, use_geocoder=use_geocoder)
             results.append({
                 "true_lat": row["latitude"],
                 "true_lon": row["longitude"],
@@ -254,9 +256,20 @@ def _build_parser():
         default=None,
         help="Optional path to save the JSON report",
     )
+    parser.add_argument(
+        "--no_geocoder",
+        action="store_true",
+        help="Disable Nominatim geocoding fallback for city-name predictions",
+    )
     return parser
 
 
 if __name__ == "__main__":
     args = _build_parser().parse_args()
-    run_benchmark(args.csv, args.model_path, args.dataset, args.output)
+    run_benchmark(
+        args.csv,
+        args.model_path,
+        args.dataset,
+        args.output,
+        use_geocoder=not args.no_geocoder,
+    )

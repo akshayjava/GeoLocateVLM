@@ -7,6 +7,17 @@ import pandas as pd
 from geopy.distance import great_circle
 from tqdm import tqdm
 
+# Geocoder is optional; we instantiate it lazily to avoid network calls at import.
+_geocoder = None
+
+def _get_geocoder():
+    global _geocoder
+    if _geocoder is None:
+        from geopy.geocoders import Nominatim
+        _geocoder = Nominatim(user_agent="geolocate-vlm")
+    return _geocoder
+
+
 def parse_coordinates(text):
     """
     Extracts latitude and longitude from text.
@@ -18,6 +29,37 @@ def parse_coordinates(text):
     if match:
         return float(match.group(1)), float(match.group(2))
     return None
+
+def text_to_coords(text, use_geocoder=True):
+    """
+    Convert model output text to (lat, lon), with a geocoding fallback (Phase 3.5).
+
+    First tries to extract decimal coordinates directly from the text.
+    If that fails and use_geocoder is True, queries Nominatim to resolve
+    a place name to coordinates.
+
+    Parameters
+    ----------
+    text         : Raw string output from the model.
+    use_geocoder : When True, fall back to Nominatim for city/country names.
+
+    Returns
+    -------
+    (lat, lon) tuple of floats, or None if resolution failed.
+    """
+    coords = parse_coordinates(text)
+    if coords:
+        return coords
+    if not use_geocoder or not text or not text.strip():
+        return None
+    try:
+        loc = _get_geocoder().geocode(text.strip(), timeout=5)
+        if loc:
+            return float(loc.latitude), float(loc.longitude)
+    except Exception:
+        pass
+    return None
+
 
 def calculate_metrics(results):
     """
@@ -58,23 +100,24 @@ def calculate_metrics(results):
 
     return metrics
 
-def evaluate(csv_path, model_path="models/geolocate_vlm", image_dir="data/images"):
+def evaluate(csv_path, model_path="models/geolocate_vlm", image_dir="data/images",
+             use_geocoder=True):
     from src.inference import GeoLocator  # lazy: avoids importing torch at module load
     df = pd.read_csv(csv_path)
     locator = GeoLocator(model_path=model_path)
-    
+
     results = []
-    
+
     print(f"Evaluating on {len(df)} images...")
     for idx, row in tqdm(df.iterrows(), total=len(df)):
-        image_path = f"{image_dir}/{idx}.jpg" # Assuming images are named by index as in data_prep
-        # If image paths are in CSV, use that
+        image_path = f"{image_dir}/{idx}.jpg"  # fallback: index-based name
         if 'image_path' in row:
-             image_path = row['image_path']
-        
+            image_path = row['image_path']
+
         try:
             pred_text = locator.predict(image_path)
-            pred_coords = parse_coordinates(pred_text)
+            # Use geocoding fallback so city-name outputs still resolve to coords
+            pred_coords = text_to_coords(pred_text, use_geocoder=use_geocoder)
             
             res = {
                 "true_lat": row['latitude'],
