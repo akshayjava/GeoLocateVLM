@@ -4,10 +4,8 @@ Unit tests for src/inference.py.
 All HuggingFace model and processor calls are mocked so tests run without
 a GPU or network access.
 """
-import os
 from unittest.mock import MagicMock, patch
 
-import pytest
 import torch
 from PIL import Image
 
@@ -155,11 +153,9 @@ class TestGeoLocatorInit:
 
     def test_falls_back_to_base_model_when_path_missing(self, tmp_path):
         patches, mock_proc, mock_model = self._patch_hf(model_path_exists=False)
-        ctx = [p.start() for p in patches]
+        [p.start() for p in patches]
         try:
             locator = GeoLocator(model_path="models/nonexistent")
-            # Processor should be loaded from the base model id, not the missing path
-            load_call = mock_proc.__class__.from_pretrained.call_args
         finally:
             for p in patches:
                 p.stop()
@@ -168,8 +164,8 @@ class TestGeoLocatorInit:
 
     def test_loads_adapters_when_path_exists(self, tmp_path):
         patches, mock_proc, mock_model = self._patch_hf(model_path_exists=True)
-        with patch("src.inference.PeftModel.from_pretrained", return_value=mock_model) as peft_mock:
-            ctx = [p.start() for p in patches]
+        with patch("src.inference.PeftModel.from_pretrained", return_value=mock_model):
+            [p.start() for p in patches]
             try:
                 locator = GeoLocator(model_path="models/geolocate_vlm")
             finally:

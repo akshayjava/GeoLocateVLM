@@ -8,9 +8,8 @@ then verify:
   - Data augmentation is applied when model.training == True.
   - Data augmentation is skipped when model.training == False.
 """
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
 import torch
 from PIL import Image
 

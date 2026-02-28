@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 from PIL import Image
 from io import BytesIO
-from datasets import Dataset, Features, Image as HFImage, Value
+from datasets import Dataset, Image as HFImage
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
