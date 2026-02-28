@@ -22,13 +22,20 @@ def parse_coordinates(text):
     """
     Extracts latitude and longitude from text.
     Expected format: "City, Country <lat, lon>" or just "lat, lon"
+
+    Returns (lat, lon) tuple or None if no valid coordinates found.
+    Coordinates outside the physical range (lat [-90,90], lon [-180,180])
+    are rejected.
     """
     # Look for patterns like (lat, lon) or <lat, lon> or just lat, lon
     # Matches integers or decimals e.g. "48, 2" or "-33.87, 151.21"
     match = re.search(r"(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)", text)
-    if match:
-        return float(match.group(1)), float(match.group(2))
-    return None
+    if not match:
+        return None
+    lat, lon = float(match.group(1)), float(match.group(2))
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return None
+    return lat, lon
 
 def text_to_coords(text, use_geocoder=True):
     """
@@ -143,6 +150,63 @@ def evaluate(csv_path, model_path="models/geolocate_vlm", image_dir="data/images
         print(f"{k}: {v:.4f}")
         
     return metrics
+
+
+# ---------------------------------------------------------------------------
+# Per-region metrics (Phase 4.7)
+# ---------------------------------------------------------------------------
+
+def _assign_region(lat: float, lon: float) -> str:
+    """
+    Assign a continent label to a (lat, lon) coordinate using approximate
+    bounding boxes.  Returns 'Other' for points that fall outside every box
+    (e.g. remote ocean areas).
+    """
+    if 15.0 <= lat <= 72.0 and -168.0 <= lon <= -52.0:
+        return "North America"
+    if -56.0 <= lat <= 15.0 and -82.0 <= lon <= -34.0:
+        return "South America"
+    if 35.0 <= lat <= 71.0 and -10.0 <= lon <= 40.0:
+        return "Europe"
+    if -35.0 <= lat <= 37.0 and -18.0 <= lon <= 52.0:
+        return "Africa"
+    if -10.0 <= lat <= 77.0 and 25.0 <= lon <= 145.0:
+        return "Asia"
+    if -44.0 <= lat <= -10.0 and 113.0 <= lon <= 180.0:
+        return "Oceania"
+    return "Other"
+
+
+def calculate_metrics_by_region(results: list) -> dict:
+    """
+    Compute per-continent accuracy metrics (Phase 4.7).
+
+    Assigns each result to a continent using lat/lon bounding boxes and
+    returns a mapping from region name to the same metrics dict produced
+    by :func:`calculate_metrics`.
+
+    Parameters
+    ----------
+    results : list of dicts, each with keys:
+              'true_lat', 'true_lon', 'pred_lat', 'pred_lon'
+
+    Returns
+    -------
+    dict mapping region name (str) → metrics dict (same format as
+    :func:`calculate_metrics`).  Regions with zero samples are omitted.
+    """
+    from collections import defaultdict
+
+    regional: dict = defaultdict(list)
+    for res in results:
+        region = _assign_region(float(res["true_lat"]), float(res["true_lon"]))
+        regional[region].append(res)
+
+    return {
+        region: calculate_metrics(subset)
+        for region, subset in sorted(regional.items())
+    }
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
