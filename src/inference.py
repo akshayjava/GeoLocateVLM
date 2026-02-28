@@ -45,10 +45,10 @@ class GeoLocator:
                 max_new_tokens=50,
                 do_sample=False
             )
-            
+
+        # Strip input tokens so only the generated answer is decoded.
+        generated_ids = generated_ids[:, inputs["input_ids"].shape[-1]:]
         result = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-        # Result usually contains the prompt + answer.
-        # We might need to strip the prompt.
         return result
 
 if __name__ == "__main__":

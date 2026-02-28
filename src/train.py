@@ -20,8 +20,8 @@ def train(
     print(f"Loading dataset from {dataset_path}...")
     dataset = load_from_disk(dataset_path)
     
-    # Split dataset if no split exists
-    if "train" not in dataset:
+    # Split dataset if no train/test split exists
+    if "train" not in dataset or "test" not in dataset:
         dataset = dataset.train_test_split(test_size=0.1)
     
     print(f"Loading model {base_model_id}...")
@@ -54,48 +54,29 @@ def train(
     model.print_trainable_parameters()
     
     def collate_fn(examples):
-        texts = ["image" for _ in examples] # PaliGemma expects 'image' token in text? 
-        # Actually PaliGemma prompt format is: "<image>prompt"
-        # But the processor handles the image token insertion usually.
-        # Let's check PaliGemma docs. 
-        # For PaliGemma, we pass text and images.
-        
         images = [example["image"].convert("RGB") for example in examples]
         prompts = [example["prompt"] for example in examples]
         labels = [example["target"] for example in examples]
-        
-        # We need to format inputs: "prompt" -> "target"
-        # PaliGemma training expects input_ids and labels.
-        
-        inputs = processor(text=prompts, images=images, return_tensors="pt", padding=True)
-        
-        # Process labels
-        # We need to tokenize labels and append them?
-        # Or does the processor handle it?
-        # For Causal LM, we usually concat prompt + label.
-        
-        # Simplified for now:
-        # We will use the processor to prepare inputs.
-        # But we need 'labels' for the loss.
-        
-        # Let's manually tokenize for now to be safe.
-        # prefix = "answer " # PaliGemma often uses a prefix
-        
-        # Actually, let's use a simpler approach for the plan:
-        # Just return inputs. The Trainer expects 'labels'.
-        
-        # For PaliGemma, the labels should be the text we want to generate.
-        text_inputs = [f"{p} {l}" for p, l in zip(prompts, labels)]
-        
-        model_inputs = processor(text=text_inputs, images=images, return_tensors="pt", padding=True)
-        
-        # Mask the prompt part in labels?
-        # This is complex to implement from scratch in a single file without testing.
-        # I'll use a standard collator if possible or a simplified one.
-        
-        # Let's assume we just train on the whole sequence for now (prompt + answer).
-        model_inputs["labels"] = model_inputs["input_ids"].clone()
-        
+
+        # Full sequence: prompt + label
+        full_texts = [f"{p} {l}" for p, l in zip(prompts, labels)]
+        model_inputs = processor(text=full_texts, images=images, return_tensors="pt", padding=True)
+
+        # Build labels tensor: only compute loss on answer tokens, not on prompt or padding.
+        # Tokenize labels alone (no special tokens) to determine their lengths.
+        label_encodings = processor.tokenizer(labels, add_special_tokens=False)
+        input_ids = model_inputs["input_ids"]
+        labels_tensor = input_ids.clone()
+
+        pad_id = processor.tokenizer.pad_token_id
+        for i, label_ids in enumerate(label_encodings["input_ids"]):
+            label_len = len(label_ids)
+            non_pad_len = (input_ids[i] != pad_id).sum().item()
+            prompt_len = non_pad_len - label_len
+            labels_tensor[i, :prompt_len] = -100   # mask image + prompt tokens
+            labels_tensor[i, non_pad_len:] = -100  # mask padding tokens
+
+        model_inputs["labels"] = labels_tensor
         return model_inputs
 
     args = TrainingArguments(
@@ -105,11 +86,11 @@ def train(
         warmup_steps=2,
         max_steps=max_steps,
         learning_rate=2e-4,
-        fp16=True,
+        bf16=True,
         logging_steps=1,
         save_strategy="steps",
         save_steps=50,
-        report_to=["tensorboard"],
+        report_to="none",
         remove_unused_columns=False 
     )
     
