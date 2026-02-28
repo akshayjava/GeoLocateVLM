@@ -1,0 +1,16 @@
+{
+  "baseline": "geo_prior",
+  "csv": "benchmarks/sample_world.csv",
+  "n_samples": 150,
+  "elapsed_seconds": 0.004,
+  "metrics": {
+    "acc_@1km": 0.0,
+    "acc_@25km": 0.0,
+    "acc_@200km": 0.0,
+    "acc_@750km": 0.013333333333333334,
+    "acc_@2500km": 0.09333333333333334,
+    "median_error_km": 8695.812391707372,
+    "mean_error_km": 8887.547548241731,
+    "parse_failure_rate": 0.0
+  }
+}
