@@ -1,12 +1,11 @@
 import argparse
+import os
+import re
+import sys
+
 import pandas as pd
 from geopy.distance import great_circle
 from tqdm import tqdm
-import sys
-import os
-sys.path.append(os.getcwd())
-from src.inference import GeoLocator
-import re
 
 def parse_coordinates(text):
     """
@@ -60,6 +59,7 @@ def calculate_metrics(results):
     return metrics
 
 def evaluate(csv_path, model_path="models/geolocate_vlm", image_dir="data/images"):
+    from src.inference import GeoLocator  # lazy: avoids importing torch at module load
     df = pd.read_csv(csv_path)
     locator = GeoLocator(model_path=model_path)
     
