@@ -43,7 +43,9 @@ def prepare_dataset(csv_path, output_dir, image_dir="images"):
         # Strategy 1: "Where was this photo taken?" -> "City, Country"
         # Strategy 2: "Estimate the coordinates." -> "lat, lon"
         
-        location_text = f"{row['city']}, {row['country']}"
+        city = row['city'] if pd.notna(row['city']) else "Unknown"
+        country = row['country'] if pd.notna(row['country']) else "Unknown"
+        location_text = f"{city}, {country}"
         coordinates_text = f"{row['latitude']}, {row['longitude']}"
         
         data.append({

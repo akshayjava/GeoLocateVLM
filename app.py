@@ -1,3 +1,5 @@
+import os
+import tempfile
 import gradio as gr
 from src.inference import GeoLocator
 
@@ -11,12 +13,14 @@ except Exception as e:
 def predict_location(image):
     if locator is None:
         return "Model not loaded. Please train the model first."
-    
-    # Save temp image
-    temp_path = "temp_image.jpg"
-    image.save(temp_path)
-    
-    result = locator.predict(temp_path)
+
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        temp_path = tmp.name
+    try:
+        image.save(temp_path)
+        result = locator.predict(temp_path)
+    finally:
+        os.unlink(temp_path)
     return result
 
 if __name__ == "__main__":

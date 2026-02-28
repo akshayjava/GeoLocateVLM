@@ -14,8 +14,8 @@ def parse_coordinates(text):
     Expected format: "City, Country <lat, lon>" or just "lat, lon"
     """
     # Look for patterns like (lat, lon) or <lat, lon> or just lat, lon
-    # This regex looks for two float numbers separated by comma
-    match = re.search(r"(-?\d+\.\d+),\s*(-?\d+\.\d+)", text)
+    # Matches integers or decimals e.g. "48, 2" or "-33.87, 151.21"
+    match = re.search(r"(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)", text)
     if match:
         return float(match.group(1)), float(match.group(2))
     return None
@@ -39,17 +39,24 @@ def calculate_metrics(results):
         except ValueError:
             errors.append(float('inf'))
 
-    # Metrics
+    if not errors:
+        return {}
+
     thresholds = [1, 25, 200, 750, 2500]
     metrics = {}
-    
+
+    finite_errors = [e for e in errors if e != float('inf')]
+    n_total = len(errors)
+    n_failed = n_total - len(finite_errors)
+
     for t in thresholds:
-        acc = sum(e <= t for e in errors) / len(errors)
+        acc = sum(e <= t for e in errors) / n_total
         metrics[f"acc_@{t}km"] = acc
-        
-    metrics["median_error_km"] = pd.Series(errors).median()
-    metrics["mean_error_km"] = pd.Series(errors).mean()
-    
+
+    metrics["median_error_km"] = float(pd.Series(finite_errors).median()) if finite_errors else float('inf')
+    metrics["mean_error_km"] = float(pd.Series(finite_errors).mean()) if finite_errors else float('inf')
+    metrics["parse_failure_rate"] = n_failed / n_total
+
     return metrics
 
 def evaluate(csv_path, model_path="models/geolocate_vlm", image_dir="data/images"):
