@@ -39,7 +39,8 @@ class GeoLocator:
         
     def predict(self, image_path, prompt="Where was this photo taken?"):
         image = Image.open(image_path).convert("RGB")
-        inputs = self.processor(text=prompt, images=image, return_tensors="pt").to(self.model.device)
+        inputs = self.processor(text=prompt, images=image, return_tensors="pt")
+        inputs = {k: v.to(self.model.device) if hasattr(v, "to") else v for k, v in inputs.items()}
         
         with torch.no_grad():
             generated_ids = self.model.generate(
