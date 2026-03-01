@@ -1,7 +1,5 @@
 import argparse
-import os
 import re
-import sys
 
 import pandas as pd
 from geopy.distance import great_circle

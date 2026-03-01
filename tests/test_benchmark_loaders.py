@@ -8,7 +8,6 @@ helper; the live HuggingFace streaming path is not exercised in unit tests.
 """
 
 import warnings
-from pathlib import Path
 
 import pandas as pd
 import pytest

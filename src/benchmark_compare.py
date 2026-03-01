@@ -145,10 +145,19 @@ def compare(result_paths, sort_by="median_error_km"):
     # Extra: print per-run metadata
     for name, metrics, raw in reports:
         n = raw.get("n_samples", "?")
-        missing = raw.get("n_missing_images", "?")
         elapsed = raw.get("elapsed_seconds", "?")
-        dataset = raw.get("dataset", "?")
-        print(f"  {name}: dataset={dataset}, n={n}, missing={missing}, elapsed={elapsed}s")
+        # Support both model benchmark reports ("dataset") and baseline reports ("baseline")
+        if "dataset" in raw:
+            kind = f"dataset={raw['dataset']}"
+        elif "baseline" in raw:
+            kind = f"baseline={raw['baseline']}"
+        else:
+            kind = "type=unknown"
+        extra_parts = [kind, f"n={n}"]
+        if "n_missing_images" in raw:
+            extra_parts.append(f"missing={raw['n_missing_images']}")
+        extra_parts.append(f"elapsed={elapsed}s")
+        print(f"  {name}: {', '.join(extra_parts)}")
     print()
 
 

@@ -15,15 +15,30 @@ Key techniques used:
 
 ```
 GeoLocateVLM/
-├── app.py                      # Gradio web demo (entry point for inference UI)
-├── requirements.txt            # Python dependencies
+├── app.py                       # Gradio web demo (entry point for inference UI)
+├── requirements.txt             # Runtime dependencies
+├── requirements-dev.txt         # Test/dev dependencies
+├── benchmarks/
+│   └── sample_world.csv         # 150-city benchmark dataset (version-controlled)
+├── results/                     # Benchmark JSON reports (version-controlled)
+│   ├── README.md                # Results table + reproduction instructions
+│   ├── baseline_random.json     # Random baseline results (seed 42)
+│   ├── baseline_mean.json       # Mean baseline results (seed 42)
+│   └── baseline_geo_prior.json  # Geo-prior baseline results (seed 42)
 ├── src/
-│   ├── data_prep.py            # Download images and build HuggingFace dataset
-│   ├── train.py                # Fine-tune PaliGemma with QLoRA
-│   ├── inference.py            # GeoLocator class for predictions
-│   └── evaluate.py             # Evaluate model on geolocation accuracy
+│   ├── data_prep.py             # Download images and build HuggingFace dataset
+│   ├── train.py                 # Fine-tune PaliGemma with QLoRA
+│   ├── inference.py             # GeoLocator class for predictions
+│   ├── evaluate.py              # Metrics: Im2GPS thresholds + per-region breakdown
+│   ├── benchmark.py             # Unified benchmark runner
+│   ├── benchmark_compare.py     # Multi-run comparison table
+│   ├── baselines.py             # Random / mean / geo-prior reference predictors
+│   └── benchmarks/
+│       ├── im2gps3k.py          # Im2GPS3k dataset loader (Phase 4.3)
+│       └── yfcc_val.py          # YFCC-val streaming + offline loader (Phase 4.4)
+├── tests/                       # Unit test suite (pytest, ≥75% coverage)
 └── notebooks/
-    └── train_colab.ipynb       # Google Colab training notebook (no local GPU needed)
+    └── train_colab.ipynb        # Google Colab training notebook (no local GPU needed)
 ```
 
 ---
@@ -152,6 +167,67 @@ The following are excluded from version control (see `.gitignore`):
 - `wandb/` — experiment tracking logs
 - `__pycache__/`, `*.pyc` — Python bytecode
 - `temp_image.jpg` — temporary inference files
+
+---
+
+## Benchmarking
+
+### Running benchmarks
+
+The baselines are deterministic (seed 42) and require only the checked-in
+CSV — no GPU, no downloaded images, no trained model.
+
+```bash
+# Reproduce all three baselines
+python src/baselines.py --baseline random    \
+    --csv benchmarks/sample_world.csv --output results/baseline_random.json    --seed 42
+python src/baselines.py --baseline mean      \
+    --csv benchmarks/sample_world.csv --output results/baseline_mean.json      --seed 42
+python src/baselines.py --baseline geo_prior \
+    --csv benchmarks/sample_world.csv --output results/baseline_geo_prior.json --seed 42
+
+# View comparison table
+python src/benchmark_compare.py results/baseline_*.json
+
+# Full model benchmark (requires trained model + image dataset)
+python src/benchmark.py \
+    --dataset custom \
+    --csv data/benchmarks/im2gps3k.csv \
+    --model_path models/geolocate_vlm \
+    --output results/im2gps3k_r16.json
+
+# All results together
+python src/benchmark_compare.py results/*.json
+```
+
+### Current baseline numbers (seed 42, `benchmarks/sample_world.csv`, n=150)
+
+| Run                | @750km | @2500km | median    |
+|--------------------|--------|---------|-----------|
+| baseline_mean      |  0.7%  |   7.3%  | 7 719 km  |
+| baseline_geo_prior |  1.3%  |   9.3%  | 8 696 km  |
+| baseline_random    |  2.7%  |   6.7%  | 9 471 km  |
+
+Any trained model must achieve a **lower median error** than `baseline_mean`
+(7 719 km) to be considered useful.
+
+### Regression policy — **MANDATORY**
+
+> **If a code change causes any benchmark metric to regress, do NOT merge
+> the change. Fix or revert it first.**
+
+Before committing any change to `src/`:
+
+1. Re-run the three baseline commands above.
+2. Confirm the JSON results in `results/baseline_*.json` match the committed
+   files exactly — baselines are deterministic, so any difference indicates a
+   bug in `src/evaluate.py` or `src/baselines.py`.
+3. If a trained model is available, also run `src/benchmark.py` and confirm
+   `median_error_km` does not increase compared to the last committed result.
+4. If a regression is detected:
+   - Do **not** proceed with the merge.
+   - Diagnose the root cause in the changed code.
+   - Fix the regression, re-run benchmarks, confirm improvement, then commit.
 
 ---
 

@@ -6,92 +6,117 @@ be compared with `src/benchmark_compare.py`.
 
 ---
 
-## File naming convention
+## Current Results — `benchmarks/sample_world.csv` (150 cities, all continents)
+
+Run with `--seed 42`.  These numbers are the **floor** — any trained model
+must beat `baseline_mean` (7 719 km median) to be worth deploying.
 
 ```
-results/
-├── baseline_random.json        # Random baseline
-├── baseline_mean.json          # Mean-coordinates baseline
-├── baseline_geo_prior.json     # Geo-prior (land-only random) baseline
-├── im2gps3k_zeroshot.json      # PaliGemma zero-shot (no fine-tuning)
-├── im2gps3k_r8.json            # Fine-tuned, LoRA rank 8
-├── im2gps3k_r16.json           # Fine-tuned, LoRA rank 16
-├── im2gps3k_r32.json           # Fine-tuned, LoRA rank 32
-└── yfcc4k_r16.json             # Best model on YFCC4k
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│  Run                    │  @1km  │ @25km  │ @200km │ @750km │ @2500km │  median │ fail% │
+├────────────────────────┼────────┼────────┼────────┼────────┼────────┼─────────┼───────┤
+│▶ baseline_mean          │   0.0% │   0.0% │   0.0% │   0.7% │   7.3% │   7719km │    0% │
+│  baseline_geo_prior     │   0.0% │   0.0% │   0.0% │   1.3% │   9.3% │   8696km │    0% │
+│  baseline_random        │   0.0% │   0.0% │   0.0% │   2.7% │   6.7% │   9471km │    0% │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+▶ = best median error on this dataset.
+
+### Expected model targets (once trained)
+
+| Run                 | @200km | @750km | median   |
+|---------------------|--------|--------|----------|
+| baseline_mean       |  0.0%  |  0.7%  | 7 719 km |
+| PaliGemma zero-shot |  ~14%  |  ~32%  | ~1 840 km|
+| GeoLocateVLM r=8    |  ~22%  |  ~43%  | ~1 120 km|
+| GeoLocateVLM r=16   |  ~25%  |  ~48%  |  ~980 km |
+
+---
+
+## Regression Policy
+
+**A pull request may not be merged if it regresses any previously recorded
+metric.**  Specifically:
+
+1. Run `python scripts/run_benchmarks.sh` (or the commands below) before
+   every commit that touches `src/`.
+2. Compare your results against the last committed JSON files in this
+   directory.
+3. If `median_error_km` increases **or** any `acc_@Xkm` decreases, the
+   change must be fixed or reverted before merging.
+4. Baseline numbers (random / mean / geo-prior) are deterministic at
+   `--seed 42` and should never change unless `src/evaluate.py` or
+   `src/baselines.py` is intentionally modified.
 
 ---
 
 ## Reproducing baselines
 
 ```bash
-# Random baseline
+# From the repository root
 python src/baselines.py \
-    --baseline random \
-    --csv data/benchmarks/im2gps3k.csv \
-    --output results/baseline_random.json
+    --baseline random    --csv benchmarks/sample_world.csv \
+    --output results/baseline_random.json    --seed 42
 
-# Mean baseline (uses world centroid if no --train_csv)
 python src/baselines.py \
-    --baseline mean \
-    --csv data/benchmarks/im2gps3k.csv \
-    --output results/baseline_mean.json
+    --baseline mean      --csv benchmarks/sample_world.csv \
+    --output results/baseline_mean.json      --seed 42
 
-# Geo-prior baseline
 python src/baselines.py \
-    --baseline geo_prior \
-    --csv data/benchmarks/im2gps3k.csv \
-    --output results/baseline_geo_prior.json
+    --baseline geo_prior --csv benchmarks/sample_world.csv \
+    --output results/baseline_geo_prior.json --seed 42
+
+# Compare all
+python src/benchmark_compare.py results/baseline_*.json
 ```
 
 ---
 
 ## Running the model benchmark
 
+> Requires a trained model at `models/geolocate_vlm/` and image dataset
+> at `data/benchmarks/`.  See the main README for training instructions.
+
 ```bash
 # Fine-tuned model
 python src/benchmark.py \
-    --dataset im2gps3k \
+    --dataset custom \
     --csv data/benchmarks/im2gps3k.csv \
     --model_path models/geolocate_vlm \
     --output results/im2gps3k_r16.json
 
-# Zero-shot (base model, no adapters)
+# Zero-shot (base model, no fine-tuning)
 python src/benchmark.py \
-    --dataset im2gps3k \
+    --dataset custom \
     --csv data/benchmarks/im2gps3k.csv \
     --model_path google/paligemma-3b-pt-224 \
     --output results/im2gps3k_zeroshot.json
+
+# Full comparison (baselines + model runs)
+python src/benchmark_compare.py results/*.json
 ```
 
 ---
 
-## Comparing runs
-
-```bash
-python src/benchmark_compare.py results/*.json
-```
-
-Expected output format:
+## File naming convention
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│  Run                    │ @1km  │@25km  │@200km │@750km │  med    │
-├─────────────────────────┼───────┼───────┼───────┼───────┼─────────┤
-│  baseline_random        │  0.0% │  0.1% │  0.8% │  3.8% │ 5020 km │
-│  baseline_geo_prior     │  0.0% │  0.2% │  1.1% │  5.2% │ 3480 km │
-│  baseline_mean          │  0.0% │  0.0% │  0.9% │  4.1% │ 4050 km │
-│  im2gps3k_zeroshot      │  1.2% │  4.5% │ 14.3% │ 32.1% │ 1840 km │
-│  im2gps3k_r16  ★        │  2.9% │  9.4% │ 24.7% │ 47.6% │  980 km │
-└─────────────────────────┴───────┴───────┴───────┴───────┴─────────┘
-★ = best median error
+results/
+├── baseline_random.json        # Random baseline (seed 42)
+├── baseline_mean.json          # Mean-coordinates baseline (seed 42)
+├── baseline_geo_prior.json     # Geo-prior (land-only random, seed 42)
+├── im2gps3k_zeroshot.json      # PaliGemma zero-shot (no fine-tuning)
+├── im2gps3k_r8.json            # Fine-tuned, LoRA rank 8
+├── im2gps3k_r16.json           # Fine-tuned, LoRA rank 16
+└── im2gps3k_r32.json           # Fine-tuned, LoRA rank 32
 ```
 
 ---
 
 ## Report JSON schema
 
-Each `.json` file produced by `src/benchmark.py` has this structure:
+### Model benchmark (`src/benchmark.py`)
 
 ```json
 {
@@ -114,23 +139,26 @@ Each `.json` file produced by `src/benchmark.py` has this structure:
 }
 ```
 
-Baseline reports produced by `src/baselines.py` use `"baseline"` instead
-of `"dataset"` and omit `"n_missing_images"` and `"elapsed_seconds"` for
-the model.
+### Baseline report (`src/baselines.py`)
+
+```json
+{
+  "baseline": "random",
+  "csv": "benchmarks/sample_world.csv",
+  "n_samples": 150,
+  "elapsed_seconds": 0.004,
+  "metrics": { ... }
+}
+```
 
 ---
 
 ## Im2GPS benchmark thresholds
 
-The standard Im2GPS evaluation protocol reports accuracy at five distance
-thresholds.  The accepted targets for a competitive fine-tuned model are:
-
-| Threshold | Street | City  | Region | Country | Continent |
-|-----------|--------|-------|--------|---------|-----------|
-| 1 km      | ✓      |       |        |         |           |
-| 25 km     |        | ✓     |        |         |           |
-| 200 km    |        |       | ✓      |         |           |
-| 750 km    |        |       |        | ✓       |           |
-| 2500 km   |        |       |        |         | ✓         |
-
-Phase 4 target: `acc_@200km ≥ 20%` and `acc_@750km ≥ 40%`.
+| Threshold | Label     | Phase 4 target |
+|-----------|-----------|----------------|
+| 1 km      | Street    | —              |
+| 25 km     | City      | —              |
+| 200 km    | Region    | ≥ 20%          |
+| 750 km    | Country   | ≥ 40%          |
+| 2 500 km  | Continent | —              |

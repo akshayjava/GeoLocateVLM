@@ -49,7 +49,7 @@ import pandas as pd
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from src.evaluate import calculate_metrics, parse_coordinates, text_to_coords
+from src.evaluate import calculate_metrics, text_to_coords
 
 SUPPORTED_DATASETS = ["im2gps3k", "yfcc4k", "custom"]
 
